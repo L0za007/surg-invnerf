@@ -12,29 +12,34 @@ Gerardo Loza, Junlei Hu, Dominic Jones, [Sharib Ali](https://eps.leeds.ac.uk/com
 Work done at the [STORM Lab UK](https://www.stormlabuk.com/) and the [AI in Medicine and Surgery (AIMS) group](https://artificial-intelligence.leeds.ac.uk/aims/), University of Leeds.
 
 ## Installation
-We recommend using conda for the environment and pip for the dependencies. Create the environment, then install PyTorch 2.0.0 with CUDA 11.7 following the official [documentation](https://pytorch.org/get-started/previous-versions/).
+We recommend using conda for the environment and pip for the dependencies. We tested our code on Linux with Python 3.10, PyTorch 2.13 and CUDA 13.2, on an NVIDIA GPU with 24 GB. `env.yml` installs all of them in one step; for another CUDA version, change the PyTorch index and versions in it following the official [documentation](https://pytorch.org/get-started/locally/).
 ```
 git clone https://github.com/L0za007/surg-invnerf.git
 cd surg-invnerf
 conda env create -f env.yml
 conda activate InvNeRF
 ```
-The proposal-network sampler additionally needs [tiny-cuda-nn](https://github.com/NVlabs/tiny-cuda-nn#requirements) and [NeRFAcc](https://github.com/nerfstudio-project/nerfacc#installation). The configurations reported in the paper use the fixed sampler and run without them.
+The masked configuration (InvNeRF<sub>mask</sub>) also needs [SAM2](https://github.com/facebookresearch/sam2) for the tool masks:
+```
+pip install git+https://github.com/facebookresearch/sam2.git huggingface_hub==2.1.1
+```
+The proposal-network sampler, not used in the reported configurations, additionally needs [tiny-cuda-nn](https://github.com/NVlabs/tiny-cuda-nn#requirements) and [NeRFAcc](https://github.com/nerfstudio-project/nerfacc#installation).
 
 ### Preprocessing
-The short-term correspondences (RAFT, CoTracker or MFT) are computed with [Preprocessing4tracker](https://github.com/L0za007/Preprocessing4tracker). Clone it next to this repository and follow its README to download the model weights:
+The short-term correspondences (RAFT, CoTracker or MFT) are computed with [Preprocessing4tracker](https://github.com/L0za007/Preprocessing4tracker), which runs in the same environment. Clone it next to this repository and extract the RAFT weights:
 ```
 cd ..
-git clone https://github.com/L0za007/Preprocessing4tracker.git
+git clone --recurse-submodules https://github.com/L0za007/Preprocessing4tracker.git
+cd Preprocessing4tracker/RAFT && unzip models.zip && cd ../..
 ```
-The masked configuration also needs [SAM2](https://github.com/facebookresearch/sam2) for the tool masks; the prompts we used are included in [`processes/sam2_prompts/`](processes/sam2_prompts/), see [`processes/README.md`](processes/README.md#3-tool-mask-prompts-invnerf_mask-only).
+To keep it somewhere else, pass its location to the pipelines with `--preprocessing_dir`.
 
 ### Paths
-Machine-specific paths are kept out of the repository in a `.env` file placed in the **parent** directory of the repo. It must define `ROOT_PATH`, the directory that contains the `Datasets/` folder. `PREPROCESSING_DIR` is optional and defaults to a sibling `Preprocessing4tracker/` folder.
+Machine-specific paths are kept out of the repository in a `.env` file placed in the **parent** directory of the repo. `DATA_DIR` is the folder that holds the datasets; the processed data and the results are written there too. `THIRD_PARTY_DIR` is the folder with the clone of [MICCAI_challenge_preprocess](https://github.com/EikoLoki/MICCAI_challenge_preprocess), only needed for SCARED.
 ```
 # ../.env
-ROOT_PATH=/absolute/path/to/data/root
-PREPROCESSING_DIR=/absolute/path/to/Preprocessing4tracker
+DATA_DIR=/absolute/path/to/datasets
+THIRD_PARTY_DIR=/absolute/path/to/third_party_code
 ```
 
 ## Data
@@ -62,20 +67,22 @@ python processes/STIR.py --exp_n 8 --flow raft     # InvNeRF_mask
 python processes/STIR.py --exp_n 9 --flow mft      # InvNeRF_MFT
 python processes/SCARED.py --exp_n 1
 ```
+`--clips 02_seq09` (STIR) and `--keyframes dataset_2/keyframe_1` (SCARED) restrict a run to some clips. See [`processes/README.md`](processes/README.md) for the rest of the options.
 
 ### Training
-A clip that has already been preprocessed can be fitted on its own. `--data_dir` is relative to `ROOT_PATH`:
+A clip that has already been preprocessed can be fitted on its own. `--data_dir` is absolute or relative to `DATA_DIR`:
 ```
-python train.py -c config/STIR/STIR_test6.yaml -dd Datasets/STIR_InvNeRF/case02_seq09
+python train.py -c config/STIR/STIR_test6.yaml -dd STIR_InvNeRF/case02_seq09
 ```
 The results are written to `<data_dir>/out/<expname>_<date>_<time>/`: the resolved `config.yaml`, the training log, the checkpoints and videos of the rendered tracks, RGB and depth.
 
 ### Evaluation
 ```
-python solver/STIR_eval.py --vid_dir <path to the clip's left .mp4> --out_dir <ROOT_PATH>/Datasets/STIR_InvNeRF/case02_seq09 --experiment 6
-python solver/gather_info.py --out_dir <ROOT_PATH>/Datasets/STIR_InvNeRF --all
+python solver/STIR_eval.py --vid_dir <path to the clip's left .mp4> --out_dir <DATA_DIR>/STIR_InvNeRF/case02_seq09 --experiment 6
+python solver/gather_info.py --out_dir <DATA_DIR>/STIR_InvNeRF --all
+python solver/SCARED_eval.py --out_dir <DATA_DIR>/SCARED_InvNeRF/DS02_KF01 --experiment 1
 ```
-`STIR_eval.py` evaluates every fit of the experiment found in the clip folder and writes `evaluation.json` with the predicted and ground-truth points, the 2D and 3D end-point errors, and the PSNR and SSIM of the rendered right views. `gather_info.py` summarises all clips into `evaluation_summary.csv`. The threshold accuracies reported in the paper are computed with [STIRMetrics](https://github.com/athaddius/STIRMetrics).
+`STIR_eval.py` evaluates every fit of the experiment found in the clip folder and writes `evaluation.json` with the predicted and ground-truth points, the 2D and 3D end-point errors, and the PSNR and SSIM of the rendered right views. `gather_info.py` summarises all clips into `evaluation_summary.csv`. The threshold accuracies reported in the paper are computed with [STIRMetrics](https://github.com/athaddius/STIRMetrics). `SCARED_eval.py` compares the depth rendered for every fitted frame with the ground truth and writes the errors in mm to `evaluation.json`.
 
 ## Layout
 ```

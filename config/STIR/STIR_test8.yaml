@@ -1,0 +1,85 @@
+# Exp description
+name: "InvNeRF (mask) on STIR.\n\t - Correspondences: RAFT + CoTracker\n\t - Deformation: MLP-CaDeX++\n\t - Colour/density: multi-scale HexPlanes\n\t - Sampler: fixed\n\t - Surgical tools masked out of the optimisation"
+expname : "Test_8"
+
+# Paths
+save_dir: ""
+
+# Data
+pairs_win: 16
+pairs_gap: 1
+em_step   : 16
+scale_factor   : 0.25
+max_scale      : 1.0
+add_CoTracker: True
+mask_tools: True
+
+#Data Loader
+batch_size : 16
+num_pts    : 256
+
+# Rays
+projection_type: focal
+# estimator: density_est
+dataset_type: stereo
+ray_size: 32
+aabb: [[-0.2,-0.2, -0.0, 0.2,0.2,0.4]]
+static_camera: True
+min_depth: 00.004 # 4mm
+max_depth: 00.35  # 30cm
+# coord_system: spherical
+
+# Training
+use_error_map: True
+merge_before_deform: True
+invertible_model: InvertNeRFv2
+n_layers: 3
+plane_inv_f: NVPnonlin
+
+# density_on_canonical: False
+color_model : HexaPlane
+# color_input : 4
+add_time: True 
+density_model: HexaPlane
+density_n_levels: 4
+# t_encoder: FeatTimeLine
+
+# Validation
+val_freq: 25
+## Early stopping
+patience: 16
+min_delta: 0.0025
+# Learning rate in epochs
+lr_scheduler: plateau
+
+# Loss
+losses: [
+      optical_flow_loss,
+      rgb_loss, 
+      cross_consistency_loss,
+      gaussian_target_loss,
+######################
+      geo_consistency_loss,
+      smoth_flow_loss,
+      # gradient_loss,
+      canonical_sphere_loss,
+      ] 
+w_losses : [ 
+      [100,0.01,0.1,1], 
+      1,
+      [100,0.01,0.1,1], 
+      1,
+######################
+      [100,0.01,0.01,0.1],
+      [100,0.01,0.1,1],
+      # 0.1,
+      0.1,
+      ]
+
+# inference
+chunk_size: 25000
+vis_occlusion : True
+use_max_loc: False
+
+# log
+txt_log : True
